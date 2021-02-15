@@ -1,0 +1,4 @@
+node_modules/
+pcap_logs/*
+
+mongo-watch/.idea/

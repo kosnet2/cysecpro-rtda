@@ -1,0 +1,90 @@
+version: "3.8"
+
+services:
+    mongodb:
+        image: mongo:4.4.0
+        environment:
+            - MONGO_INITDB_ROOT_USERNAME=nnids
+            - MONGO_INITDB_ROOT_PASSWORD=nnids
+        volumes:
+            - nnids_data:/data/db
+        networks:
+            - nnids_backend
+        deploy:
+            placement:
+                constraints:
+                    - "node.role==manager"
+        
+    mongo_client:
+        image: kosnet2/nnids_mongo_client:1.0.0-alpine3.12
+        volumes:
+            - sniffer_data:/pcapLogs
+        networks:
+            - nnids_backend
+        depends_on:
+            - mongodb
+        environment:
+            - SNIFFER_PCAP_LOG_DIR="/pcapLogs/"
+            - MONGODB_URI="mongodb://nnids:nnids@mongodb:27017"
+            - MONGODB_DB="nnids"
+            - MONGODB_COLLECTION="pcapLogs"
+            - SERVER_PORT=3000
+        deploy:
+            replicas: 3
+            restart_policy:
+                condition: on-failure
+    
+    notifier:
+        image: kosnet2/nnids_notifier:1.0.0-alpine3.12
+        volumes:
+            - sniffer_data:/pcapLogs
+        networks:
+            - nnids_backend
+        depends_on: 
+            - mongo_client
+        deploy:
+            replicas: 1
+            restart_policy:
+                condition: on-failure
+    
+    sniffer:
+        image: kosnet2/nnids_sniffer:1.0.0-alpine3.12
+        networks:
+            - hostnet
+        volumes: 
+            - sniffer_data:/pcapLogs
+        depends_on:
+            - notifier
+        environment:
+            - SNIFFER_IFACE=wlo1
+            - SNIFFER_PCAP_LOG_SIZE=10
+            # - SNIFFER_FILTER="udp or tcp"
+            # - SNIFFER_PCAP_LOG_DIR="/pcapLogs/"
+        deploy:
+            replicas: 1
+
+    visualizer:
+        image: dockersamples/visualizer:stable
+        ports:
+            - "8080:8080"
+        stop_grace_period: 1m30s
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock"
+        deploy:
+            placement:
+                constraints:
+                    - "node.role==manager"
+
+networks:
+    nnids_backend:
+        driver:
+            overlay
+    hostnet:
+        external: true
+        name: host
+
+volumes:
+    nnids_data:
+    sniffer_data:
+
+            
