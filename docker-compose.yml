@@ -1,20 +1,46 @@
 version: "3.8"
 
 services:
-    mongodb:
-        image: mongo:4.4.0
-        environment:
-            - MONGO_INITDB_ROOT_USERNAME=nnids
-            - MONGO_INITDB_ROOT_PASSWORD=nnids
+    mongos:
+        image: 'bitnami/mongodb-sharded:latest'
         volumes:
-            - nnids_data:/data/db
+            - nnids_data:/data/db1
+        environment:
+            - MONGODB_SHARDING_MODE=mongos
+            - MONGODB_CFG_PRIMARY_HOST=mongo2
+            - MONGODB_CFG_REPLICA_SET_NAME=cfgreplicaset
+            - MONGODB_REPLICA_SET_KEY=replicasetkey123
+            - MONGODB_ROOT_PASSWORD=password123
         networks:
             - nnids_backend
-        deploy:
-            placement:
-                constraints:
-                    - "node.role==manager"
-        
+
+    mongo1:
+        image: 'bitnami/mongodb-sharded:latest'
+        volumes:
+            - nnids_data:/data/db2
+        environment:
+            - MONGODB_SHARDING_MODE=shardsvr
+            - MONGODB_MONGOS_HOST=mongos
+            - MONGODB_ROOT_PASSWORD=password123
+            - MONGODB_REPLICA_SET_MODE=primary
+            - MONGODB_REPLICA_SET_KEY=replicasetkey123
+            - MONGODB_REPLICA_SET_NAME=shard0
+        networks:
+            - nnids_backend
+
+    mongo2:
+        image: 'bitnami/mongodb-sharded:latest'
+        volumes:
+            - nnids_data:/data/db2
+        environment:
+            - MONGODB_SHARDING_MODE=configsvr
+            - MONGODB_ROOT_PASSWORD=password123
+            - MONGODB_REPLICA_SET_MODE=primary
+            - MONGODB_REPLICA_SET_KEY=replicasetkey123
+            - MONGODB_REPLICA_SET_NAME=config-replicaset
+        networks:
+            - nnids_backend
+    
     mongo_client:
         image: kosnet2/nnids_mongo_client:1.0.0-alpine3.12
         volumes:
@@ -22,17 +48,18 @@ services:
         networks:
             - nnids_backend
         depends_on:
-            - mongodb
+            - mongos
+            - mongo1
+            - mongo2
         environment:
-            - SNIFFER_PCAP_LOG_DIR="/pcapLogs/"
-            - MONGODB_URI="mongodb://nnids:nnids@mongodb:27017"
-            - MONGODB_DB="nnids"
-            - MONGODB_COLLECTION="pcapLogs"
+            - SNIFFER_PCAP_LOG_DIR=/pcapLogs/
+            - MONGODB_URI="mongodb://root:password123@mongo1:27017"
+            - MONGODB_DB=nnids
+            - MONGODB_COLLECTION=pcapLogs
             - SERVER_PORT=3000
         deploy:
-            replicas: 3
-            restart_policy:
-                condition: on-failure
+            replicas: 2
+
     
     notifier:
         image: kosnet2/nnids_notifier:1.0.0-alpine3.12
@@ -60,6 +87,21 @@ services:
             - SNIFFER_PCAP_LOG_SIZE=10
             # - SNIFFER_FILTER="udp or tcp"
             # - SNIFFER_PCAP_LOG_DIR="/pcapLogs/"
+        deploy:
+            replicas: 1
+
+    mongo_watch:
+        image: kosnet2/nnids_mongo_watch:latest
+        networks:
+            - nnids_backend
+        depends_on:
+            - mongo1
+            - mongo2
+            - mongo3
+        environment:
+            - MONGODB_URI=mongodb://root:password123@mongo1:27017/nnids?authSource=admin
+            - MONGODB_DB="nnids"
+            - MONGODB_COLLECTION="pcapLogs"
         deploy:
             replicas: 1
 

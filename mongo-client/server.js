@@ -15,8 +15,12 @@ server.use(pino());
 server.use(routes);
 server.use('/', errorController.get404);
 
+console.log(process.env.MONGODB_URI)
+console.log(process.env.SERVER_PORT)
+
 MongoClient.connect(process.env.MONGODB_URI, { useUnifiedTopology: true }, (err, client) => {
     if (err) {
+        console.error(process.env.MONGODB_URI)
         console.error(err);
         return;
     }
